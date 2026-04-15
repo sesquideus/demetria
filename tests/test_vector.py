@@ -1,11 +1,8 @@
-import sys
-import pytest
-import numpy as np
-
-from physfields import ScalarField, VectorField
+from demetria import VectorField
 
 
 class TestVector():
     def test_scalar_times_vector(self, trough, rotating_disk, unit_square):
-        assert isinstance((trough * rotating_disk), VectorField)
-
+        computed = trough * rotating_disk
+        assert isinstance(computed, VectorField), \
+            f"Expected a VectorField, got {type(computed)}"

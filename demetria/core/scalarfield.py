@@ -1,11 +1,17 @@
+from typing import TypeAlias, Callable
+
 import numpy as np
 import numbers
 
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from matplotlib import colors
+from numpy.typing import ArrayLike
 
 from .field import Field
+
+
+FieldFunc: TypeAlias = Callable[[ArrayLike, ArrayLike], ArrayLike]
 
 
 class ScalarField(Field):

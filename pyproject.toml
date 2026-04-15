@@ -1,11 +1,11 @@
 [tool.poetry]
-name = "physics-fields"
+name = "demetria"
 version = "0.1.0"
-description = "A minimalistic package for manipulating scalar and vector fields."
-authors = ["Martin Baláž <martin.balaz@trojsten.sk>"]
+description = "A minimalistic package for manipulating 2D scalar and vector fields."
+authors = ["Martin Odokienko <martin.balaz@trojsten.sk>"]
 readme = "README.md"
 packages = [
-    { include = "physfields" },
+    { include = "demetria" },
 ]
 
 [tool.poetry.dependencies]

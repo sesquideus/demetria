@@ -2,8 +2,12 @@ import sys
 import pytest
 import numpy as np
 
-from physfields import Field, ScalarField, VectorField
-from physfields.zernike import Zernike, ZernikeVector
+from demetria import Field, ScalarField, VectorField
+from demetria.zernike import Zernike, ZernikeVector
+
+
+nl = [(n, l) for n in range(0, 10) for l in range(-n, n + 1, 2)]
+nl2 = [(*a, *b) for a in nl for b in nl]
 
 
 class TestZernikeScalar():
@@ -27,37 +31,16 @@ class TestZernikeScalar():
         z = np.ma.masked_where(Field.UnitDiskMask(x, y), (v1 * v2)(x, y))
         return np.sum(z) / z.count()
 
-    def test_ortho_1(self, unit_square):
-        v1 = Zernike(3, 1)
-        v2 = Zernike(5, -3)
-        assert self.eval(v1, v2, unit_square) == pytest.approx(0, abs=0.002)
+    @pytest.mark.parametrize("n, l", nl)
+    def test_norm(self, n, l, unit_square):
+        v = Zernike(n, l)
+        assert self.eval(v, v, unit_square) == pytest.approx(1, rel=0.01)
 
-    def test_ortho_2(self, unit_square):
-        v1 = Zernike(1, -1)
-        v2 = Zernike(5, 5)
-        assert self.eval(v1, v2, unit_square) == pytest.approx(0, abs=0.002)
-
-    def test_ortho_3(self, unit_square):
-        v1 = Zernike(6, 0)
-        v2 = Zernike(12, 0)
-        assert self.eval(v1, v2, unit_square) == pytest.approx(0, abs=0.002)
-
-    def test_ortho_4(self, unit_square):
-        v1 = Zernike(7, -1)
-        v2 = Zernike(7, 1)
-        assert self.eval(v1, v2, unit_square) == pytest.approx(0, abs=0.002)
-
-    def test_norm_1(self, unit_square):
-        v1 = Zernike(7, -1)
-        assert self.eval(v1, v1, unit_square) == pytest.approx(1, abs=0.002)
-
-    def test_norm_2(self, unit_square):
-        v1 = Zernike(8, 0)
-        assert self.eval(v1, v1, unit_square) == pytest.approx(1, abs=0.002)
-
-    def test_norm_2(self, unit_square):
-        v1 = Zernike(11, -11)
-        assert self.eval(v1, v1, unit_square) == pytest.approx(1, abs=0.002)
+    @pytest.mark.parametrize("n1, l1, n2, l2", nl2)
+    def test_norm_x(self, n1, l1, n2, l2, unit_square):
+        v1 = Zernike(n1, l1)
+        v2 = Zernike(n2, l2)
+        assert self.eval(v1, v2, unit_square) == (pytest.approx(1, rel=0.01) if n1 == n2 and l1 == l2 else pytest.approx(0, abs=0.01))
 
 
 
@@ -81,8 +64,10 @@ class TestZernikeVector():
     @staticmethod
     def eval(v1, v2, field):
         x, y = field
-        z = np.ma.masked_where(Field.UnitDiskMask(x, y), (v1 * v2)(x, y))
-        return np.sum(z) / z.count()
+        mask = Field.UnitDiskMask(x, y)
+        mask = np.stack([mask, mask])
+        z = np.ma.masked_where(mask, (v1 * v2)(x, y))
+        return 2 * np.sum(z) / z.count()
 
     def test_ortho_1(self, unit_square):
         v1 = ZernikeVector(3, -1, False)

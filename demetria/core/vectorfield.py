@@ -1,30 +1,51 @@
 import numpy as np
 import numbers
-import inspect
 import matplotlib as mpl
+import copy
 
 from matplotlib import pyplot as plt
-from typing import Callable
+from typing import Callable, TypeAlias
+
+from numpy.typing import ArrayLike, NDArray
+from scipy.interpolate import griddata
 
 from .field import Field
 from .scalarfield import ScalarField, SampledScalarField
 
 
-class VectorField(Field):
-    def __init__(self, u=None, v=None, *, mask=None, name=""):
-        super().__init__(mask=mask, name=name)
-        self.function = (lambda x, y: (np.zeros_like(x) if u is None else u(x, y), np.zeros_like(y) if v is None else v(x, y)))
+VectorFunc: TypeAlias = Callable[[ArrayLike, ArrayLike], tuple[ArrayLike, ArrayLike]]
 
-    @staticmethod
+
+class VectorField(Field):
+    """
+    A vector field described by its horizontal and vertical components u(x, y), v(x, y)
+    """
+    def __init__(self,
+                 u: Callable[[ArrayLike, ArrayLike], ArrayLike] = None,
+                 v: Callable[[ArrayLike, ArrayLike], ArrayLike] = None,
+                 *,
+                 mask: Callable[[NDArray[np.float64]], NDArray[bool]] = None,
+                 name: str = ""):
+        super().__init__(mask=mask, name=name)
+        self.function = (
+            lambda x, y: (
+                np.zeros_like(x) if u is None else u(x, y),
+                np.zeros_like(y) if v is None else v(x, y),
+            )
+        )
+
+    @classmethod
     def from_uv(
-            u: Callable[[np.ndarray, np.ndarray], np.ndarray],
-            v: Callable[[np.ndarray, np.ndarray], np.ndarray]
-        ) -> 'VectorField':
+            cls,
+            u: Callable[[ArrayLike, ArrayLike], ArrayLike],
+            v: Callable[[ArrayLike, ArrayLike], ArrayLike]) -> 'VectorField':
         """ Construct from functions u(x, y) and v(x, y) """
         return __class__(lambda x, y: (u(x, y), v(x, y)))
 
-    @staticmethod
-    def from_rt(rho, tau):
+    @classmethod
+    def from_rt(cls,
+                rho: Callable[[ArrayLike, ArrayLike], ArrayLike],
+                tau: Callable[[ArrayLike, ArrayLike], ArrayLike]) -> 'VectorField':
         """ Construct from functions rho(r, phi), tau(r, phi) """
         def fun(x, y):
             r = np.sqrt(x**2 + y**2)
@@ -34,26 +55,76 @@ class VectorField(Field):
             return erho * np.cos(etau), erho * np.sin(etau)
         return __class__(fun)
 
-    @staticmethod
-    def from_direct(fun: Callable[[np.ndarray], np.ndarray]):
-        """ Construct from function. This requires ndarray [any, ..., any, D] """
+    @classmethod
+    def from_function(cls,
+                      fun: Callable[[ArrayLike, ArrayLike], tuple[ArrayLike, ArrayLike]]):
+        """ Construct from function. """
+        out = __class__()
+        out.function = fun
+        return out
 
     def eval(self, x):
         return np.stack(self.__call__(x[:, 0], x[:, 1]), axis=1)
 
     def __add__(self, other):
-        return VectorField(lambda x, y: self.function(x, y) + other.function(x, y))
+        if isinstance(other, VectorField):
+            return VectorField(
+                lambda x, y: (self.function(x, y)[0] + other.function(x, y)[0]),
+                lambda x, y: (self.function(x, y)[1] + other.function(x, y)[1]),
+            )
+        return NotImplemented
+
+    def __iadd__(self, other):
+        if isinstance(other, VectorField):
+            nf = copy.copy(self.function)
+            def inner(x, y):
+                f = nf(x, y)
+                o = other.function(x, y)
+                return f[0] + o[0], f[1] + o[1]
+
+            self.function = inner
+            return self
+        else:
+            return NotImplemented
 
     def __sub__(self, other):
-        return VectorField(lambda x, y: self.function(x, y) - other.function(x, y))
+        if isinstance(other, VectorField):
+            return VectorField(
+                lambda x, y: (self.function(x, y)[0] - other.function(x, y)[0]),
+                lambda x, y: (self.function(x, y)[1] - other.function(x, y)[1]),
+            )
+
+    def __isub(self, other):
+        f = copy.copy(self.function)
+        self.function = (
+            lambda x, y: (
+                f(x, y)[0] - other.function(x, y)[0],
+                f(x, y)[1] - other.function(x, y)[1],
+            )
+        )
+        return self
 
     def __mul__(self, other):
         if isinstance(other, numbers.Number):
-            return VectorField(lambda x, y: (other * self.function(x, y)[0], other * self.function(x, y)[1]))
+            # Multiplication by a scalar
+            def inner(x: ArrayLike, y: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+                f = self.function(x, y)
+                return other * f[0], other * f[1]
+            return VectorField.from_function(inner)
         elif isinstance(other, ScalarField):
-            return VectorField(lambda x, y: (self.function(x, y)[0] * other.function(x, y), self.function(x, y)[1] * other.function(x, y)))
+            # Product of vector and scalar field
+            def inner(x: ArrayLike, y: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+                f = self.function(x, y)
+                o = other.function(x, y)
+                return f[0] * o, f[1] * o
+            return VectorField.from_function(inner)
         elif isinstance(other, VectorField):
-            return ScalarField(lambda x, y: self.function(x, y)[0] * other.function(x, y)[0] + self.function(x, y)[1] * other.function(x, y)[1])
+            # Dot product of vector fields
+            def inner(x: ArrayLike, y: ArrayLike) -> tuple[ArrayLike, ArrayLike]:
+                f = self.function(x, y)
+                o = other.function(x, y)
+                return f[0] * o[0], f[1] * o[1]
+            return ScalarField(inner)
         else:
             return NotImplemented
 
@@ -71,10 +142,11 @@ class VectorField(Field):
 
     def __truediv__(self, other):
         if isinstance(other, numbers.Number):
-            return VectorField(lambda x, y: (self.function(x, y)[0] / other, self.function(x, y)[1] / other))
+            return VectorField.from_function(lambda x, y: (self.function(x, y)[0] / other, self.function(x, y)[1] / other))
         else:
             return NotImplemented
 
+    # FixMe: Remove this
     def plot(self, x, y, *, file=None, limits=None, mask=None, colour=None, **kwargs):
         print(f"Plotting to {file}")
         fig, ax = plt.subplots(figsize=kwargs.get('figsize', (10, 10)))
@@ -96,8 +168,10 @@ class VectorField(Field):
             plt.switch_backend('Agg')
             fig.savefig(file, dpi=100)
 
+    # FixMe: Remove this? Or maybe not
     def plot_data(self, ax, x, y, *, mask=None, colour=None, **kwargs):
         u, v = self(x, y)
+
         if mask is not None:
             u = np.ma.masked_where(mask(x, y), u)
             v = np.ma.masked_where(mask(x, y), v)
@@ -125,9 +199,9 @@ class VectorField(Field):
         else:                                               # Default: pass-through
             clr = colour
 
-        ax.quiver(x, y, u, v, clr, norm=norm, cmap=cmap, pivot='middle')
+        ax.quiver(x, y, u, v, clr, norm=norm, cmap=cmap, pivot='middle', **kwargs)
 
-    def div(self, x, y, epsilon=0.01):
+    def div(self, x, y, epsilon=0.001):
         """
         Numerically evaluate the divergence of the vector field at meshgrid (x, y)
         with precision epsilon
@@ -138,7 +212,7 @@ class VectorField(Field):
         _, v2 = self.__call__(x, y - epsilon)
         return ((u2 - u1) + (v2 - v1)) / (2 * epsilon)
 
-    def rot(self, x, y, epsilon=0.01):
+    def rot(self, x, y, epsilon=0.001):
         """
         Numerically evaluate the curl of the vector field at meshgrid (x, y)
         with precision epsilon as (x + e, y) - (x - e, y) + ()

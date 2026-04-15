@@ -4,12 +4,12 @@ import numpy as np
 
 sys.path.append('src/')
 
-from physfields import ScalarField, VectorField
+from demetria import ScalarField, VectorField
 
 
 @pytest.fixture
 def unit_square():
-    x = np.linspace(-1, 1, 201)
+    x = np.linspace(-1, 1, 401)
     return np.meshgrid(x, x)
 
 @pytest.fixture
@@ -26,7 +26,7 @@ def trough():
 
 @pytest.fixture
 def rotating_disk():
-    return VectorField(lambda x, y: (y, -x))
+    return VectorField.from_function(lambda x, y: (y, -x))
 
 @pytest.fixture
 def source():

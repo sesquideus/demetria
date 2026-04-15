@@ -2,7 +2,7 @@ import sys
 import pytest
 import numpy as np
 
-from physfields.scalarfield import ScalarField
+from demetria import ScalarField
 
 
 class TestScalar():
